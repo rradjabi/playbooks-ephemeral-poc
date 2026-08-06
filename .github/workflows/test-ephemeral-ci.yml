@@ -4,11 +4,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-linux-r9700:
-    runs-on: [self-hosted, Linux, r9700]
-    steps:
-      - run: echo "Hello from $(hostname) - $(uname -a)"
-
   test-linux-stx:
     runs-on: [self-hosted, Linux, stx]
     steps:
@@ -17,4 +12,4 @@ jobs:
   test-windows-stx:
     runs-on: [self-hosted, Windows, stx]
     steps:
-      - run: Write-Output "Hello from $env:COMPUTERNAME"
+      - run: Write-Output "Hello from $env:COMPUTERNAME - $(Get-CimInstance Win32_OperatingSystem | Select-Object -ExpandProperty Caption)"
