@@ -13,6 +13,14 @@ on:
         description: 'Specific playbook ID to test (leave empty to test all playbooks)'
         required: false
         type: string
+      devices:
+        description: 'Comma-separated devices to test (e.g. stx,r9700). Empty = every device the playbook declares.'
+        required: false
+        type: string
+      platforms:
+        description: 'Comma-separated platforms to test (linux, windows). Empty = both.'
+        required: false
+        type: string
   pull_request:
 
 permissions:
@@ -64,6 +72,10 @@ jobs:
         id: build-matrix
         env:
           PLAYBOOKS: ${{ steps.detect.outputs.playbooks }}
+          # Empty means "no filter", which keeps the scheduled/PR behaviour of
+          # fanning out to every device-OS pair the playbook declares.
+          DEVICE_FILTER: ${{ github.event.inputs.devices }}
+          PLATFORM_FILTER: ${{ github.event.inputs.platforms }}
         run: |
           if [ "$PLAYBOOKS" = "[]" ] || [ -z "$PLAYBOOKS" ]; then
             echo "matrix=[]" >> $GITHUB_OUTPUT
@@ -78,6 +90,15 @@ jobs:
           playbooks = json.loads(os.environ["PLAYBOOKS"])
           matrix = []
 
+          def parse_filter(name):
+              """Comma-separated allow-list from a dispatch input, or None for 'all'."""
+              raw = os.environ.get(name, "")
+              values = {v.strip().lower() for v in raw.split(",") if v.strip()}
+              return values or None
+
+          device_filter = parse_filter("DEVICE_FILTER")
+          platform_filter = parse_filter("PLATFORM_FILTER")
+
           for pb_id in playbooks:
               for cat in ["core", "supplemental"]:
                   pb_file = Path(f"playbooks/{cat}/{pb_id}/playbook.json")
@@ -88,8 +109,12 @@ jobs:
                           continue
                       required = meta.get("required_platforms", {})
                       for device, platform_list in tested.items():
+                          if device_filter and device.lower() not in device_filter:
+                              continue
                           required_platforms = set(required.get(device, []))
                           for platform in platform_list:
+                              if platform_filter and platform.lower() not in platform_filter:
+                                  continue
                               os_label = "Windows" if platform == "windows" else "Linux"
                               matrix.append({
                                   "playbook": pb_id,
