@@ -3,6 +3,10 @@ name: Test Ephemeral CI
 on:
   workflow_dispatch:
 
+# The two r9700 jobs are backed by Linux and Windows templates bound to the
+# same physical GPU, so the orchestrator's exclusion group runs them one at a
+# time. They are expected to queue behind each other, not run in parallel.
+
 jobs:
   test-linux-stx:
     runs-on: [self-hosted, Linux, stx]
@@ -13,3 +17,17 @@ jobs:
     runs-on: [self-hosted, Windows, stx]
     steps:
       - run: Write-Output "Hello from $env:COMPUTERNAME - $(Get-CimInstance Win32_OperatingSystem | Select-Object -ExpandProperty Caption)"
+
+  test-linux-r9700:
+    runs-on: [self-hosted, Linux, r9700]
+    steps:
+      - run: echo "Hello from $(hostname) - $(uname -a)"
+      - name: Show passed-through GPU
+        run: lspci -nn | grep -iE 'vga|display' || echo "no display device found"
+
+  test-windows-r9700:
+    runs-on: [self-hosted, Windows, r9700]
+    steps:
+      - run: Write-Output "Hello from $env:COMPUTERNAME - $(Get-CimInstance Win32_OperatingSystem | Select-Object -ExpandProperty Caption)"
+      - name: Show passed-through GPU
+        run: Get-CimInstance Win32_VideoController | Select-Object Name, DriverVersion, Status | Format-List
