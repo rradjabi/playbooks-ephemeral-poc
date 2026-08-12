@@ -5,8 +5,14 @@
 name: Test Playbooks
 
 on:
-  schedule:
-    - cron: '0 8 * * *'    # 01:00 PDT (UTC-7); 02:00 PST (UTC-8)
+  # Disabled in this fork. The matrix includes linux/halo, and the DevLab pool
+  # advertises self-hosted,Linux,halo -- so every night this run claimed the
+  # ephemeral runners the DevLab orchestrator had just built for its own jobs.
+  # GitHub gives a queued job to whichever matching runner appears first, and
+  # these jobs were older, so they always won. Re-enable once DevLab is meant
+  # to serve real playbook tests.
+  # schedule:
+  #   - cron: '0 8 * * *'    # 01:00 PDT (UTC-7); 02:00 PST (UTC-8)
   workflow_dispatch:
     inputs:
       playbook_id:
