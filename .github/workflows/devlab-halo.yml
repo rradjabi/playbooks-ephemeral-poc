@@ -1,0 +1,47 @@
+name: DevLab Ephemeral CI
+
+# Drop into playbooks-ephemeral-poc as .github/workflows/devlab-halo.yml
+#
+# Every job here runs on a runner that does not exist until the job is queued.
+# The DevLab orchestrator provisions it on demand in one of the runner slots on
+# the Strix Halo host, registers it as --ephemeral, and removes it afterwards.
+#
+# The `halo` label is what routes these jobs to DevLab. The existing `stx` and
+# `r9700` jobs in test-ephemeral-ci.yml stay on the XSJ pool, so both can run
+# against this repository at the same time without either claiming the other's
+# work.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Strix Halo - Linux
+    runs-on: [self-hosted, Linux, halo]
+    steps:
+      - run: echo "Hello from $(hostname) - $(uname -a)"
+      - name: Which slot ran this
+        run: |
+          echo "runner:    ${{ runner.name }}"
+          echo "workspace: ${GITHUB_WORKSPACE}"
+      - name: Accelerators
+        run: lspci -nn | grep -iE 'vga|display|processing accelerator' || echo "none reported"
+
+  # Two jobs that overlap in time, to prove the slots really are independent.
+  # With DEVLAB_SLOTS >= 2 and no exclusion group they run side by side in
+  # separate runner directories; with an exclusion group set they queue.
+  concurrent:
+    name: Strix Halo - slot ${{ matrix.slot }}
+    runs-on: [self-hosted, Linux, halo]
+    strategy:
+      fail-fast: false
+      matrix:
+        slot: [1, 2]
+    steps:
+      - name: Occupy a slot
+        run: |
+          echo "runner:    ${{ runner.name }}"
+          echo "workspace: ${GITHUB_WORKSPACE}"
+          date -u +'start  %H:%M:%S'
+          sleep 45
+          date -u +'finish %H:%M:%S'
