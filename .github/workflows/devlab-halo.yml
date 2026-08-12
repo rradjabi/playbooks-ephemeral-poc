@@ -27,18 +27,23 @@ jobs:
       - name: Accelerators
         run: lspci -nn | grep -iE 'vga|display|processing accelerator' || echo "none reported"
 
-  # Two jobs that overlap in time, to prove the slots really are independent.
-  # With DEVLAB_SLOTS >= 2 and no exclusion group they run side by side in
-  # separate runner directories; with an exclusion group set they queue.
-  concurrent:
-    name: Strix Halo - slot ${{ matrix.slot }}
+  # Two jobs that each occupy the host for 45 seconds, to prove they are not
+  # given it at the same time. The orchestrator treats every runner slot on one
+  # machine as one device and hands them out one at a time, so leg 2's `start`
+  # must come after leg 1's `finish`. Overlapping stamps mean the exclusion is
+  # not being applied -- a bug, not a setting.
+  #
+  # Dispatching this and the lemonade repository's devlab-halo.yml together is
+  # the cross-repo version of the same check.
+  serialized:
+    name: Strix Halo - leg ${{ matrix.leg }}
     runs-on: [self-hosted, Linux, halo]
     strategy:
       fail-fast: false
       matrix:
-        slot: [1, 2]
+        leg: [1, 2]
     steps:
-      - name: Occupy a slot
+      - name: Occupy the host
         run: |
           echo "runner:    ${{ runner.name }}"
           echo "workspace: ${GITHUB_WORKSPACE}"
