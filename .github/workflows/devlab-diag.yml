@@ -1,0 +1,49 @@
+name: DevLab Diagnostic
+
+# Temporary. Asks the Strix Halo questions that need a shell on the box, by
+# running as a job on it. Delete once the answer is in hand.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    name: Strix Halo - diagnostic
+    runs-on: [self-hosted, Linux, halo]
+    steps:
+      - name: Who and where
+        run: |
+          echo "user:    $(whoami)"
+          echo "home:    ${HOME}"
+          echo "host:    $(hostname)"
+          lemonade --version || true
+          lemonade-server --version || true
+
+      - name: Lemonade server process
+        run: |
+          ps -eo user,pid,etime,cmd | grep -i '[l]emonade' || echo "no lemonade process"
+          ss -lntp 2>/dev/null | grep 13305 || echo "nothing listening on 13305"
+
+      - name: What /api/v1/models reports
+        run: |
+          curl -s --max-time 10 http://127.0.0.1:13305/api/v1/models \
+            | python3 -c 'import json,sys
+d=json.load(sys.stdin)
+items=d.get("data",d if isinstance(d,list) else [])
+print(f"{len(items)} model(s)")
+for m in items:
+    print(f"  {m.get(\"id\")}  downloaded={m.get(\"downloaded\")}")'
+
+      - name: Does the CLI know the model
+        run: |
+          lemonade list 2>&1 | head -60 || true
+          echo "--- grep gemma ---"
+          lemonade list 2>&1 | grep -i gemma || echo "no gemma in lemonade list"
+
+      - name: Model cache on disk
+        run: |
+          for d in "${HOME}/.cache/lemonade" /root/.cache/lemonade /home/*/.cache/lemonade; do
+            [ -d "$d" ] && echo "== $d" && du -sh "$d" 2>/dev/null && ls "$d" 2>/dev/null | head -20
+          done
+          echo "--- huggingface cache ---"
+          ls -d "${HOME}/.cache/huggingface/hub"/* 2>/dev/null | head -20 || echo "none"
