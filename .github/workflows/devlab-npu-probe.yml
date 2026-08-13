@@ -1,0 +1,91 @@
+name: DevLab NPU Probe
+
+# Drop into playbooks-ephemeral-poc as .github/workflows/devlab-npu-probe.yml
+#
+# Decides whether the DevLab Halo can serve whisper.cpp's `npu-amd-linux` job
+# before we fork a repo and wire up a pool for it. That job's second step is
+#
+#     lsmod | grep -q amdxdna || { echo "ERROR: amdxdna driver not loaded"; exit 1; }
+#     ls /dev/accel/accel*    || { echo "ERROR: no NPU accel device node"; exit 1; }
+#
+# and everything after it -- FlexML runtime, a VitisAI build, an encoder cache,
+# a transcription that must mention "vitisai" -- is wasted if that check fails.
+# The Halo has an XDNA2 NPU in silicon; whether this image loads the driver and
+# exposes the node to *our* unprivileged runner account is a different question,
+# and the only place to ask it is a job on the box.
+#
+# Note the asymmetry with the GPU. `render`/`video` got us /dev/kfd, which is
+# what made rocminfo report gfx1151. /dev/accel is its own node with its own
+# ownership, so GPU access proves nothing about NPU access -- step 2 opens the
+# device rather than just stat-ing it, because readable-to-root and usable-by-
+# ephemeral are the two outcomes that look identical in an ls listing.
+#
+# Read-only and cheap. Nothing here writes outside the workspace.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    name: Strix Halo - NPU, toolchain, egress
+    runs-on: [self-hosted, Linux, halo]
+    timeout-minutes: 15
+    steps:
+      - name: Who and where
+        run: |
+          echo "user:   $(whoami)"
+          echo "host:   $(hostname)"
+          echo "kernel: $(uname -r)"
+          echo "groups: $(id -nG)"
+          echo "cpu:    $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//')"
+
+      - name: NPU driver and device node
+        run: |
+          # Report, never fail. A missing NPU is the answer we came for, and we
+          # want the remaining steps to run either way.
+          echo "--- amdxdna module"
+          lsmod | grep -i amdxdna || echo "amdxdna NOT loaded"
+          echo "--- /dev/accel"
+          ls -l /dev/accel/ 2>&1 || echo "no /dev/accel directory"
+          echo "--- can this account actually open it?"
+          for d in /dev/accel/accel*; do
+            [ -e "$d" ] || { echo "no accel node to open"; break; }
+            if [ -r "$d" ] && [ -w "$d" ]; then
+              echo "$d rw OK as $(whoami)"
+            else
+              echo "$d PRESENT BUT NOT rw AS $(whoami) -- owner $(stat -c '%U:%G %a' "$d")"
+            fi
+          done
+          echo "--- amdxdna in PCI"
+          lspci -nn 2>/dev/null | grep -i -e signal -e npu -e 'accel' || echo "no NPU-ish PCI line"
+
+      - name: XRT / VitisAI runtime already present?
+        run: |
+          # The job installs FlexML itself, so absence here is not fatal -- but
+          # xrt-smi existing tells us the box has been set up for NPU work
+          # before, which is the difference between "will work" and "will work
+          # after someone installs a stack".
+          command -v xrt-smi && xrt-smi examine 2>&1 | head -30 || echo "xrt-smi not on PATH"
+          ls -d /opt/xilinx /opt/amd 2>/dev/null || echo "no /opt/xilinx or /opt/amd"
+
+      - name: Build toolchain
+        run: |
+          echo "cmake:  $(cmake --version 2>/dev/null | head -1 || echo MISSING)"
+          echo "gcc:    $(gcc --version 2>/dev/null | head -1 || echo MISSING)"
+          echo "nproc:  $(nproc)"
+
+      - name: Egress to what the job downloads
+        run: |
+          for u in \
+            https://github.com/lemonade-sdk/whisper.cpp-rocm/releases/download/deps/flexmlrt-1.8.0-linux.tar.gz \
+            https://huggingface.co/ggerganov/whisper.cpp \
+            https://huggingface.co/api/collections/amd/ryzen-ai-whisper-npu-optimized-onnx-models ; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -I -L --max-time 25 "$u" || echo TIMEOUT)
+            echo "$code  $u"
+          done
+
+      - name: Disk headroom on the workspace
+        run: |
+          df -h "$GITHUB_WORKSPACE" | tail -1
+          echo "backing store:"
+          findmnt -no SOURCE,FSTYPE --target "$GITHUB_WORKSPACE"
