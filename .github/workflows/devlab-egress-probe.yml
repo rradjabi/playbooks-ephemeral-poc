@@ -1,0 +1,88 @@
+name: DevLab Egress Probe
+
+# Drop into playbooks-ephemeral-poc as .github/workflows/devlab-egress-probe.yml
+#
+# Answers the three questions that decide whether the DevLab Halo can serve
+# lemonade-sdk/vllm-rocm, without needing any credential we do not already
+# have. All three are properties of the host, not of GitHub, so none of them
+# can be checked from here -- a job on the box is the only way to ask.
+#
+#   1. Egress. build-vllm-rocm.yml's own comment says AMD's nightlies host
+#      "allowlists these boxes' egress but 403s GitHub-hosted runner IPs".
+#      If our address is not on that allowlist the build dies at pip install
+#      and nothing else about the integration matters.
+#   2. Disk. qualify pulls a ~3.3 GB artifact zip that extracts to ~11 GB, so
+#      the box needs roughly 15 GB free before a run, not after.
+#   3. gfx1151. qualify sets env GFX: gfx1151. Confirm the device answers to
+#      that name here rather than 20 minutes into a build.
+#
+# Read-only and cheap. Nothing here writes outside /tmp.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    name: Strix Halo - egress, disk, gfx
+    runs-on: [self-hosted, Linux, halo]
+    timeout-minutes: 15
+    steps:
+      - name: Who and where
+        run: |
+          echo "user:   $(whoami)"
+          echo "host:   $(hostname)"
+          echo "egress: $(curl -s --max-time 15 https://api.ipify.org || echo UNKNOWN)"
+
+      - name: Egress to the AMD wheel indexes
+        run: |
+          # Report, do not fail. A 403 here is the answer, not an error, and we
+          # want every URL probed even after the first one refuses us.
+          for u in \
+            https://rocm.frameworks-nightlies.amd.com/whl/ \
+            https://rocm.nightlies.amd.com/whl-multi-arch/ \
+            https://rocm.frameworks.amd.com/whl/gfx1151/vllm/ \
+            https://pypi.org/simple/
+          do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$u" || echo "000")
+            case "$code" in
+              200|301|302) verdict="reachable" ;;
+              403)         verdict="FORBIDDEN - egress IP not allowlisted" ;;
+              000)         verdict="no response - DNS, proxy or firewall" ;;
+              *)           verdict="unexpected" ;;
+            esac
+            printf '%-58s %s  %s\n' "$u" "$code" "$verdict"
+          done
+
+      - name: Disk headroom
+        run: |
+          echo "--- filesystems that matter ---"
+          for p in / /home /tmp "${RUNNER_TEMP:-/tmp}" "${GITHUB_WORKSPACE:-.}"; do
+            df -h "$p" 2>/dev/null | tail -1 | sed "s|^|$p  |"
+          done
+          echo "--- qualify needs ~15 GB free on the workspace filesystem ---"
+          avail_kb=$(df -k "${GITHUB_WORKSPACE:-.}" | tail -1 | awk '{print $4}')
+          echo "workspace free: $((avail_kb / 1024 / 1024)) GiB"
+          if [ "$avail_kb" -lt 15728640 ]; then
+            echo "WARNING: under 15 GiB free -- a qualify run would likely fail on space"
+          fi
+
+      - name: Device identity
+        run: |
+          rocminfo 2>/dev/null | grep -iE 'gfx|Marketing' | sort -u | head || echo "rocminfo unavailable"
+          echo "--- does the box answer to gfx1151 ---"
+          if rocminfo 2>/dev/null | grep -qi gfx1151; then
+            echo "yes: gfx1151 present"
+          else
+            echo "no: gfx1151 NOT reported -- qualify targets this exact name"
+          fi
+
+      - name: Group membership, for the record
+        run: |
+          # render/video decide whether /dev/kfd and /dev/dri/renderD128 open at
+          # all. Without them rocm-smi still looks healthy -- it reads sysfs --
+          # while torch reports no GPU. That is how llama-factory-finetuning
+          # failed with "Your setup doesn't support bf16/gpu".
+          echo "id: $(id)"
+          for d in /dev/kfd /dev/dri/renderD128; do
+            if [ -r "$d" ] && [ -w "$d" ]; then echo "$d rw ok"; else echo "$d NOT accessible"; fi
+          done
