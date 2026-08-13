@@ -1,0 +1,58 @@
+name: DevLab Diagnostic
+
+# Temporary. Delete once the answer is in hand.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  gpu:
+    name: Strix Halo - GPU access
+    runs-on: [self-hosted, Linux, halo]
+    timeout-minutes: 20
+    steps:
+      - name: Identity and groups
+        run: |
+          echo "user:   $(whoami)"
+          echo "id:     $(id)"
+          echo "groups: $(groups)"
+
+      - name: Device nodes
+        run: |
+          ls -l /dev/kfd 2>&1 || echo "no /dev/kfd"
+          ls -l /dev/dri 2>&1 || echo "no /dev/dri"
+          echo "--- can we open them ---"
+          for d in /dev/kfd /dev/dri/renderD128; do
+            if [ -e "$d" ]; then
+              if [ -r "$d" ] && [ -w "$d" ]; then echo "$d rw ok"; else echo "$d NOT accessible"; fi
+            fi
+          done
+
+      - name: rocminfo / rocm-smi
+        run: |
+          which rocminfo rocm-smi 2>&1 || true
+          rocm-smi 2>&1 | head -20 || echo "rocm-smi failed"
+          echo "--- rocminfo agents ---"
+          rocminfo 2>&1 | grep -E 'Name:|Marketing|Device Type' | head -20 || echo "rocminfo failed"
+
+      - name: What torch sees
+        run: |
+          python3 - <<'PY' 2>&1 | head -30
+          try:
+              import torch
+              print("torch", torch.__version__)
+              print("cuda available:", torch.cuda.is_available())
+              print("device count:", torch.cuda.device_count())
+              print("hip:", getattr(torch.version, "hip", None))
+              if torch.cuda.is_available():
+                  print("name:", torch.cuda.get_device_name(0))
+                  print("bf16 supported:", torch.cuda.is_bf16_supported())
+          except Exception as e:
+              print("torch import/probe failed:", type(e).__name__, e)
+          PY
+
+      - name: Who the lemonade daemon runs as, for comparison
+        run: |
+          ps -o user,group,cmd -p "$(pgrep -f '[l]emond' | head -1)" 2>/dev/null || echo "no lemond"
+          id lemonade 2>&1 || true
+          id ephemeral 2>&1 || true
