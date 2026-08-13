@@ -26,19 +26,21 @@ jobs:
 
       - name: What /api/v1/models reports
         run: |
-          curl -s --max-time 10 http://127.0.0.1:13305/api/v1/models \
-            | python3 -c 'import json,sys
-d=json.load(sys.stdin)
-items=d.get("data",d if isinstance(d,list) else [])
-print(f"{len(items)} model(s)")
-for m in items:
-    print(f"  {m.get(\"id\")}  downloaded={m.get(\"downloaded\")}")'
+          curl -s --max-time 10 http://127.0.0.1:13305/api/v1/models > /tmp/models.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open("/tmp/models.json"))
+          items = d.get("data", d) if isinstance(d, dict) else d
+          print(f"{len(items)} model(s)")
+          for m in items:
+              print("  {}  downloaded={}".format(m.get("id"), m.get("downloaded")))
+          PY
 
       - name: Does the CLI know the model
         run: |
-          lemonade list 2>&1 | head -60 || true
+          lemonade-server list 2>&1 | head -80 || true
           echo "--- grep gemma ---"
-          lemonade list 2>&1 | grep -i gemma || echo "no gemma in lemonade list"
+          lemonade-server list 2>&1 | grep -i gemma || echo "no gemma in list"
 
       - name: Model cache on disk
         run: |
