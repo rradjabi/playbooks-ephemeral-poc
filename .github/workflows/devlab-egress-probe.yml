@@ -66,6 +66,24 @@ jobs:
             echo "WARNING: under 15 GiB free -- a qualify run would likely fail on space"
           fi
 
+      - name: What overlayroot is actually backed by
+        run: |
+          # The root fs reports as "overlayroot", which is Ubuntu's ephemeral-root
+          # package. Its upper layer is sometimes tmpfs -- RAM -- and sometimes a
+          # disk partition. That distinction decides whether the 18 GiB of "free
+          # space" is real: an 11 GiB artifact extract into a RAM-backed upper
+          # layer eats memory the qualification harness needs for inference.
+          echo "--- mount ---"
+          findmnt -no SOURCE,FSTYPE,OPTIONS / 2>/dev/null || mount | grep ' / '
+          echo "--- overlay layers ---"
+          grep -E ' / | /media/root-r[ow] ' /proc/mounts || true
+          echo "--- tmpfs in play ---"
+          df -h -t tmpfs 2>/dev/null || true
+          echo "--- underlying block devices ---"
+          lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINT 2>/dev/null | head -20 || true
+          echo "--- memory ---"
+          free -g
+
       - name: Device identity
         run: |
           rocminfo 2>/dev/null | grep -iE 'gfx|Marketing' | sort -u | head || echo "rocminfo unavailable"
