@@ -16,20 +16,66 @@ name: DevLab Host Prep
 #   lemonade-getting-started needed Gemma-4-E2B-it-GGUF and failed without it,
 #   with "not present in Lemonade /api/v1/models" -- which reads like a broken
 #   server rather than a missing download.
+#
+# It also installs apt packages, for the same reason and with one extra twist.
+# whisper.cpp's npu-amd-linux runs `cmake -B build`, and cmake is not on this
+# host -- the probe found gcc but no cmake at all. Upstream's dedicated runners
+# are prepared machines; ours is prepared by this file.
+#
+# The twist is the root filesystem. It is an overlay whose writable layer is
+# tmpfs, so an apt install lands in RAM and is gone on the next reboot, exactly
+# like /opt/ephemeral-ci and .env. Treat the packages job as something to re-run
+# after a reboot rather than a one-time setup step, and expect a job to fail
+# with a missing tool as the first symptom that the box has been restarted.
 
 on:
   workflow_dispatch:
     inputs:
       models:
-        description: 'Space-separated Lemonade model ids to pull'
-        required: true
-        default: 'Gemma-4-E2B-it-GGUF'
+        description: 'Space-separated Lemonade model ids to pull (blank to skip)'
+        required: false
+        default: ''
+        type: string
+      packages:
+        description: 'Space-separated apt packages to install (blank to skip)'
+        required: false
+        default: 'cmake'
         type: string
 
 jobs:
+  packages:
+    name: Strix Halo - install apt packages
+    runs-on: [self-hosted, Linux, halo]
+    if: inputs.packages != ''
+    timeout-minutes: 30
+    steps:
+      - name: Before
+        run: |
+          for p in ${{ inputs.packages }}; do
+            printf '%-20s %s\n' "$p" "$(command -v "$p" || echo '(not on PATH)')"
+          done
+
+      - name: Install
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -n apt-get update
+          sudo -n apt-get install -y ${{ inputs.packages }}
+
+      - name: After
+        run: |
+          # Report the version rather than just the path: `command -v` succeeds
+          # for a broken install, and the thing the build actually needs is a
+          # working binary.
+          for p in ${{ inputs.packages }}; do
+            echo "=== $p"
+            "$p" --version 2>&1 | head -1 || echo "  installed but $p --version failed"
+          done
+
   pull:
     name: Strix Halo - pull models
     runs-on: [self-hosted, Linux, halo]
+    if: inputs.models != ''
     # Some of these are tens of gigabytes, and the pool serialises, so a slow
     # pull holds the host against every other queued job. Cap it.
     timeout-minutes: 120
