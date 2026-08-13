@@ -1,51 +1,55 @@
 name: DevLab Diagnostic
 
-# Temporary. Asks the Strix Halo questions that need a shell on the box, by
-# running as a job on it. Delete once the answer is in hand.
+# Temporary. Does things on the Strix Halo that need a shell on the box, by
+# running as a job on it. Delete once the host is in the state we want.
 
 on:
   workflow_dispatch:
 
 jobs:
-  diag:
-    name: Strix Halo - diagnostic
+  pull-model:
+    name: Strix Halo - pull Gemma
     runs-on: [self-hosted, Linux, halo]
+    timeout-minutes: 45
     steps:
-      - name: Who and where
+      - name: Before
         run: |
-          echo "user:    $(whoami)"
-          echo "home:    ${HOME}"
-          echo "host:    $(hostname)"
-          lemonade --version || true
-          lemonade-server --version || true
-
-      - name: Lemonade server process
-        run: |
-          ps -eo user,pid,etime,cmd | grep -i '[l]emonade' || echo "no lemonade process"
-          ss -lntp 2>/dev/null | grep 13305 || echo "nothing listening on 13305"
-
-      - name: What /api/v1/models reports
-        run: |
-          curl -s --max-time 10 http://127.0.0.1:13305/api/v1/models > /tmp/models.json
+          echo "user: $(whoami)"
+          lemonade --version
+          df -h /home /var 2>/dev/null | sed -n '1,6p'
+          curl -s --max-time 10 http://127.0.0.1:13305/api/v1/models > /tmp/before.json
           python3 - <<'PY'
           import json
-          d = json.load(open("/tmp/models.json"))
+          d = json.load(open("/tmp/before.json"))
           items = d.get("data", d) if isinstance(d, dict) else d
-          print(f"{len(items)} model(s)")
+          print(f"{len(items)} model(s) before")
           for m in items:
-              print("  {}  downloaded={}".format(m.get("id"), m.get("downloaded")))
+              print("  ", m.get("id"))
           PY
 
-      - name: Does the CLI know the model
+      - name: Pull Gemma-4-E2B-it-GGUF
         run: |
-          lemonade-server list 2>&1 | head -80 || true
-          echo "--- grep gemma ---"
-          lemonade-server list 2>&1 | grep -i gemma || echo "no gemma in list"
+          # ~4 GB from Hugging Face. The daemon runs as user `lemonade`, so the
+          # model lands in its store and outlives this ephemeral runner --
+          # which is the point: the playbook test only checks presence.
+          lemonade pull Gemma-4-E2B-it-GGUF
 
-      - name: Model cache on disk
+      - name: After
         run: |
-          for d in "${HOME}/.cache/lemonade" /root/.cache/lemonade /home/*/.cache/lemonade; do
-            [ -d "$d" ] && echo "== $d" && du -sh "$d" 2>/dev/null && ls "$d" 2>/dev/null | head -20
-          done
-          echo "--- huggingface cache ---"
-          ls -d "${HOME}/.cache/huggingface/hub"/* 2>/dev/null | head -20 || echo "none"
+          curl -s --max-time 10 http://127.0.0.1:13305/api/v1/models > /tmp/after.json
+          python3 - <<'PY'
+          import json, sys
+          d = json.load(open("/tmp/after.json"))
+          items = d.get("data", d) if isinstance(d, dict) else d
+          print(f"{len(items)} model(s) after")
+          hit = None
+          for m in items:
+              print("  {}  downloaded={}".format(m.get("id"), m.get("downloaded")))
+              if m.get("id") == "Gemma-4-E2B-it-GGUF":
+                  hit = m
+          if not hit:
+              sys.exit("Gemma-4-E2B-it-GGUF still absent from /api/v1/models")
+          if not hit.get("downloaded"):
+              sys.exit("Gemma-4-E2B-it-GGUF listed but not downloaded")
+          print("OK: Gemma-4-E2B-it-GGUF present and downloaded")
+          PY
