@@ -1,0 +1,68 @@
+name: DevLab Host Prep
+
+# Drop into playbooks-ephemeral-poc as .github/workflows/devlab-host-prep.yml
+#
+# Puts models into the Lemonade daemon's store on the DevLab host, by running
+# as a job on the host. There is no SSH path to that machine from outside, and
+# a job is the one channel that reaches it, so host preparation is done the
+# same way the tests are.
+#
+# Why this is needed at all: the playbook tests check that a model is *present*
+# and downloaded, never that it can be fetched. Upstream's dedicated runners
+# have the models already, so the check passes there and fails here on a host
+# that has only ever run other playbooks. The runner is ephemeral; the daemon's
+# model store is not, so a model pulled once stays pulled.
+#
+#   lemonade-getting-started needed Gemma-4-E2B-it-GGUF and failed without it,
+#   with "not present in Lemonade /api/v1/models" -- which reads like a broken
+#   server rather than a missing download.
+
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: 'Space-separated Lemonade model ids to pull'
+        required: true
+        default: 'Gemma-4-E2B-it-GGUF'
+        type: string
+
+jobs:
+  pull:
+    name: Strix Halo - pull models
+    runs-on: [self-hosted, Linux, halo]
+    # Some of these are tens of gigabytes, and the pool serialises, so a slow
+    # pull holds the host against every other queued job. Cap it.
+    timeout-minutes: 120
+    steps:
+      - name: Before
+        run: |
+          echo "user: $(whoami)"
+          lemonade --version
+          df -h /home 2>/dev/null | tail -1
+
+      - name: Pull
+        run: |
+          for m in ${{ inputs.models }}; do
+            echo "=== $m"
+            lemonade pull "$m"
+          done
+
+      - name: After
+        run: |
+          curl -s --max-time 10 http://127.0.0.1:13305/api/v1/models > /tmp/models.json
+          python3 - <<'PY'
+          import json, os, sys
+          d = json.load(open("/tmp/models.json"))
+          items = d.get("data", d) if isinstance(d, dict) else d
+          have = {m.get("id"): m.get("downloaded") for m in items}
+          print(f"{len(have)} model(s) in the store")
+          for k, v in sorted(have.items()):
+              print(f"  {k}  downloaded={v}")
+          missing = [m for m in os.environ["WANT"].split()
+                     if not have.get(m)]
+          if missing:
+              sys.exit("not present and downloaded after pull: " + ", ".join(missing))
+          print("OK: every requested model is present and downloaded")
+          PY
+        env:
+          WANT: ${{ inputs.models }}
