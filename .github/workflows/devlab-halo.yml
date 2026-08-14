@@ -3,13 +3,19 @@ name: DevLab Ephemeral CI
 # Drop into playbooks-ephemeral-poc as .github/workflows/devlab-halo.yml
 #
 # Every job here runs on a runner that does not exist until the job is queued.
-# The DevLab orchestrator provisions it on demand in one of the runner slots on
-# the Strix Halo host, registers it as --ephemeral, and removes it afterwards.
+# The DevLab orchestrator provisions it on demand in a runner slot on one of the
+# three Strix Halo machines, registers it as --ephemeral, and removes it
+# afterwards.
 #
 # The `halo` label is what routes these jobs to DevLab. The existing `stx` and
 # `r9700` jobs in test-ephemeral-ci.yml stay on the XSJ pool, so both can run
 # against this repository at the same time without either claiming the other's
 # work.
+#
+# The two matrix jobs below check the pool's scheduling contract from opposite
+# sides, and the contract is not "one job at a time" -- it is one job at a time
+# *per machine*, as many machines at once as there are. Until August 2026 DevLab
+# was a single host and this file only tested the first half.
 
 on:
   workflow_dispatch:
@@ -27,26 +33,51 @@ jobs:
       - name: Accelerators
         run: lspci -nn | grep -iE 'vga|display|processing accelerator' || echo "none reported"
 
-  # Two jobs that each occupy the host for 45 seconds, to prove they are not
-  # given it at the same time. The orchestrator treats every runner slot on one
-  # machine as one device and hands them out one at a time, so leg 2's `start`
-  # must come after leg 1's `finish`. Overlapping stamps mean the exclusion is
-  # not being applied -- a bug, not a setting.
-  #
-  # Dispatching this and the lemonade repository's devlab-halo.yml together is
-  # the cross-repo version of the same check.
-  serialized:
-    name: Strix Halo - leg ${{ matrix.leg }}
+  # Four legs asking only for `halo`, which all three machines carry. Three
+  # should start at once on three different hosts and the fourth should wait for
+  # one of them, so the stamps overlap in threes and the runner names are
+  # distinct. All four landing on one host, or running one after another, means
+  # the pool has collapsed to a single device -- most often because two
+  # inventory entries ended up sharing a hostname, since pool.device_key keys
+  # bare metal on that.
+  parallel:
+    name: Halo pool - parallel leg ${{ matrix.leg }}
     runs-on: [self-hosted, Linux, halo]
     strategy:
       fail-fast: false
       matrix:
-        leg: [1, 2]
+        leg: [1, 2, 3, 4]
+    steps:
+      - name: Occupy a machine
+        run: |
+          echo "runner:    ${{ runner.name }}"
+          echo "host:      $(hostname)"
+          date -u +'start  %H:%M:%S'
+          sleep 45
+          date -u +'finish %H:%M:%S'
+
+  # The other half of the contract. Both legs name one machine, so they are one
+  # device however many machines the pool has, and leg B's `start` must come
+  # after leg A's `finish`. Overlapping stamps here mean the exclusion is not
+  # being applied -- a bug, not a setting, and the reason it matters is that two
+  # jobs contending for one iGPU do not fail cleanly. They produce a slow or
+  # OOM-killed job, or a flaky test somewhere unrelated.
+  #
+  # Pinned by the per-host label rather than by `halo`, which is what those
+  # labels are for: every machine carries devlab-<key> precisely so it can be
+  # addressed alone.
+  serialized:
+    name: One machine - leg ${{ matrix.leg }}
+    runs-on: [self-hosted, Linux, devlab-d03]
+    strategy:
+      fail-fast: false
+      matrix:
+        leg: [A, B]
     steps:
       - name: Occupy the host
         run: |
           echo "runner:    ${{ runner.name }}"
-          echo "workspace: ${GITHUB_WORKSPACE}"
+          echo "host:      $(hostname)"
           date -u +'start  %H:%M:%S'
-          sleep 45
+          sleep 30
           date -u +'finish %H:%M:%S'
