@@ -5,14 +5,26 @@
 name: Test Playbooks
 
 on:
-  # Disabled in this fork. The matrix includes linux/halo, and the DevLab pool
-  # advertises self-hosted,Linux,halo -- so every night this run claimed the
-  # ephemeral runners the DevLab orchestrator had just built for its own jobs.
-  # GitHub gives a queued job to whichever matching runner appears first, and
-  # these jobs were older, so they always won. Re-enable once DevLab is meant
-  # to serve real playbook tests.
-  # schedule:
-  #   - cron: '0 8 * * *'    # 01:00 PDT (UTC-7); 02:00 PST (UTC-8)
+  # Enabled: DevLab is now meant to serve real playbook tests. The matrix
+  # includes linux/halo and the DevLab pool advertises self-hosted,Linux,halo,
+  # so these jobs are served by the ephemeral runners the orchestrator builds.
+  # That is the same mechanism this was disabled for -- GitHub hands a queued
+  # job to whichever matching runner appears first, and these, being older, win
+  # over anything else the pool is building for. It was theft while DevLab had
+  # other work; it is the point now.
+  #
+  # Know what a nightly costs before reading a red run. A scheduled event
+  # carries no inputs, so the filters below are empty and the matrix is
+  # unfiltered: every playbook against every device-OS pair it declares, 194
+  # legs as of 2026-08-14. DevLab serves the 18 linux/halo ones. The rest ask
+  # for stx, r9700, krk, rx7900xt, rx9070xt or Windows halo, and whatever no
+  # pool answers for simply sits queued until GitHub expires it.
+  #
+  # To make the nightly DevLab-only without touching dispatch, give the
+  # build-matrix step's DEVICE_FILTER/PLATFORM_FILTER a fallback for the
+  # schedule event rather than editing this block.
+  schedule:
+    - cron: '0 8 * * *'    # 01:00 PDT (UTC-7); 02:00 PST (UTC-8)
   workflow_dispatch:
     inputs:
       playbook_id:
