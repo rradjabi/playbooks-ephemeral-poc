@@ -57,11 +57,13 @@ jobs:
           date -u +'finish %H:%M:%S'
 
   # The other half of the contract. Both legs name one machine, so they are one
-  # device however many machines the pool has, and leg B's `start` must come
-  # after leg A's `finish`. Overlapping stamps here mean the exclusion is not
-  # being applied -- a bug, not a setting, and the reason it matters is that two
-  # jobs contending for one iGPU do not fail cleanly. They produce a slow or
-  # OOM-killed job, or a flaky test somewhere unrelated.
+  # device however many machines the pool has, and their two windows must not
+  # overlap. Read them as a pair, not in order: GitHub does not schedule matrix
+  # legs in the order they are written, and under contention B routinely takes
+  # the machine first. "B started before A" is not the failure. Two stamps that
+  # overlap is, and the reason it matters is that two jobs contending for one
+  # iGPU do not fail cleanly. They produce a slow or OOM-killed job, or a flaky
+  # test somewhere unrelated.
   #
   # Pinned by the per-host label rather than by `halo`, which is what those
   # labels are for: every machine carries devlab-<key> precisely so it can be
