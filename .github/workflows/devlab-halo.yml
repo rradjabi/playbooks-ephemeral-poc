@@ -4,8 +4,8 @@ name: DevLab Ephemeral CI
 #
 # Every job here runs on a runner that does not exist until the job is queued.
 # The DevLab orchestrator provisions it on demand in a runner slot on one of the
-# three Strix Halo machines, registers it as --ephemeral, and removes it
-# afterwards.
+# pool's machines -- three Strix Halo boxes running Linux and one Windows host
+# -- registers it as --ephemeral, and removes it afterwards.
 #
 # The `halo` label is what routes these jobs to DevLab. The existing `stx` and
 # `r9700` jobs in test-ephemeral-ci.yml stay on the XSJ pool, so both can run
@@ -32,6 +32,52 @@ jobs:
           echo "workspace: ${GITHUB_WORKSPACE}"
       - name: Accelerators
         run: lspci -nn | grep -iE 'vga|display|processing accelerator' || echo "none reported"
+
+  # X2-LA01-S05-D01, the pool's Windows machine, and the only job here that can
+  # reach it. Separate from `smoke` rather than a leg of it because the two
+  # share nothing: different labels, different shells, different login account.
+  #
+  # Read the label set twice. `Windows` is in pool.GENERIC_LABELS, so a job
+  # asking for [self-hosted, Windows] matches no resource in this pool at all --
+  # only the devlab-s05d01 token reaches this machine. That is deliberate while
+  # the host is being proven: its hardware has not been characterised, it claims
+  # no shared label, and so it cannot be handed somebody else's Windows work by
+  # mistake. Widen the labels once the machine has been inventoried.
+  windows:
+    name: S05-D01 - Windows
+    runs-on: [self-hosted, Windows, devlab-s05d01]
+    steps:
+      # Every step names its shell on purpose. The runner's default on Windows
+      # is pwsh -- PowerShell Core, which is not what ships with Windows -- so
+      # on a host carrying only 5.1 an unqualified `run:` dies before executing
+      # anything, complaining about pwsh rather than about the step.
+      - name: Which slot ran this
+        shell: cmd
+        run: |
+          echo runner:    %RUNNER_NAME%
+          echo host:      %COMPUTERNAME%
+          echo workspace: %GITHUB_WORKSPACE%
+          ver
+      # The canary for host preparation, and the reason this job exists. The
+      # orchestrator drives this machine over cmd.exe, so the step above passes
+      # on a host where PowerShell is unusable. The runner writes each
+      # `shell: powershell` step to a temp .ps1 and dot-sources it, which the
+      # client-SKU default execution policy refuses -- so a host that never got
+      # devlab_slots.ps1's RemoteSigned fix registers, comes online, takes the
+      # job, and fails right here with UnauthorizedAccess. That reads as a
+      # broken workflow rather than a broken host, which is why it is asserted.
+      - name: PowerShell works at all
+        shell: powershell
+        run: |
+          Get-ExecutionPolicy -List
+          $PSVersionTable.PSVersion
+      # Needs Git for Windows on the machine: the runner bundles its own node
+      # but not git. Last rather than first, against convention, so that a host
+      # missing it still proves both shells before failing.
+      - uses: actions/checkout@v4
+      - name: Accelerators
+        shell: powershell
+        run: Get-CimInstance Win32_VideoController | Format-Table Name, DriverVersion -AutoSize
 
   # Four legs asking only for `halo`, which all three machines carry. Three
   # should start at once on three different hosts and the fourth should wait for
