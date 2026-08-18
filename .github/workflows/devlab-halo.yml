@@ -39,13 +39,13 @@ jobs:
   #
   # Read the label set twice. `Windows` is in pool.GENERIC_LABELS, so a job
   # asking for [self-hosted, Windows] matches no resource in this pool at all --
-  # only the devlab-s05d01 token reaches this machine. That is deliberate while
+  # only the devlab-x2-la01-s05-d01 token reaches this machine. That is deliberate while
   # the host is being proven: its hardware has not been characterised, it claims
   # no shared label, and so it cannot be handed somebody else's Windows work by
   # mistake. Widen the labels once the machine has been inventoried.
   windows:
     name: S05-D01 - Windows
-    runs-on: [self-hosted, Windows, devlab-s05d01]
+    runs-on: [self-hosted, Windows, devlab-x2-la01-s05-d01]
     steps:
       # Every step names its shell on purpose. The runner's default on Windows
       # is pwsh -- PowerShell Core, which is not what ships with Windows -- so
@@ -116,7 +116,7 @@ jobs:
   # addressed alone.
   serialized:
     name: One machine - leg ${{ matrix.leg }}
-    runs-on: [self-hosted, Linux, devlab-d03]
+    runs-on: [self-hosted, Linux, devlab-x2-la01-s01-d03]
     strategy:
       fail-fast: false
       matrix:
