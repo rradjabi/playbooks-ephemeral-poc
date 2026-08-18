@@ -1,0 +1,35 @@
+name: DevLab Provision Probe
+
+# Drop into playbooks-ephemeral-poc as .github/workflows/devlab-provision-probe.yml
+#
+# The smallest job that still exercises the whole provisioning path: a
+# registration token, a runner installed and started in a slot, GitHub handing
+# it the work, and teardown afterwards. It asserts nothing about the host, which
+# is the point -- when this one goes red the fault is in getting a runner up,
+# not in anything the job did.
+#
+# Written to test the retry added for issue #3. Break the target host's slot,
+# dispatch this, and the orchestrator should log 'attempt 1 of 3' and requeue
+# rather than writing the job off; repair the slot and the same job should go
+# green on a later attempt. That is hard to observe with devlab-halo.yml, whose
+# four jobs spread across the pool and take minutes.
+#
+# Pinned to one machine on purpose. 'halo' would let it land anywhere, and a
+# retry test has to know which host it is breaking. Change the label to aim it
+# somewhere else; it does nothing host-specific.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  provision:
+    name: S01-D03 - provisioning round trip
+    runs-on: [self-hosted, Linux, devlab-x2-la01-s01-d03]
+    timeout-minutes: 10
+    steps:
+      - name: Which slot ran this
+        run: |
+          echo "runner:  ${{ runner.name }}"
+          echo "host:    $(hostname)"
+          echo "workdir: $(pwd)"
+          echo "user:    $(whoami)"
