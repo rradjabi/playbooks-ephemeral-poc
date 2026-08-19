@@ -21,6 +21,19 @@ name: DevLab NPU Probe
 # ephemeral are the two outcomes that look identical in an ls listing.
 #
 # Read-only and cheap. Nothing here writes outside the workspace.
+#
+# It now asks for `npu-ready` rather than bare `halo`. When this was written
+# every Halo we had was the same, so `halo` and "the machine to ask" were the
+# same set and the probe reported the one answer there was. Since TA's XRT image
+# arrived they are different sets: on a bare-`halo` host the answer is already
+# known and negative -- driver loaded, node present, no xrt-smi -- so a dispatch
+# that lands there burns a slot to re-learn it. `npu-ready` is the claim under
+# test, and this is what tests it: the label is a promise made in config.py by a
+# person, and the only thing that can check it is a job on the box.
+#
+# The steps deliberately still report rather than fail. A host that carries the
+# label and cannot open /dev/accel is the finding, and it is worth seeing all of
+# the evidence rather than the first line of it.
 
 on:
   workflow_dispatch:
@@ -28,7 +41,7 @@ on:
 jobs:
   probe:
     name: Strix Halo - NPU, toolchain, egress
-    runs-on: [self-hosted, Linux, halo]
+    runs-on: [self-hosted, Linux, npu-ready]
     timeout-minutes: 15
     steps:
       - name: Who and where
