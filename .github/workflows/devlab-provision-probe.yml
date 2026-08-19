@@ -25,6 +25,10 @@ on:
   workflow_dispatch:
     inputs:
       host:
+        # This list has to track config.DEVLAB_HOST_INVENTORY by hand, and a
+        # host missing from it is a host that cannot be probed at the moment
+        # anyone would most want to -- right after enrolling it. Add the option
+        # in the same change that adds the inventory entry.
         description: Per-host label to pin to (devlab-<lowercased lab name>)
         required: true
         default: devlab-x2-la01-s01-d03
@@ -32,8 +36,10 @@ on:
         options:
           - devlab-x2-la01-s01-d03
           - devlab-x2-la01-s01-d04
+          - devlab-x2-la01-s02-d01
           - devlab-x2-la01-s02-d02
           - devlab-x2-la01-s02-d03
+          - devlab-x2-la01-s02-d04
           - devlab-x2-la01-s03-d02
 
 jobs:
