@@ -33,6 +33,7 @@ on:
           - devlab-x2-la01-s01-d03
           - devlab-x2-la01-s01-d04
           - devlab-x2-la01-s02-d02
+          - devlab-x2-la01-s02-d03
           - devlab-x2-la01-s03-d02
 
 jobs:
