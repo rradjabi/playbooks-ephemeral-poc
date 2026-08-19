@@ -1,0 +1,71 @@
+name: DevLab Windows NPU Probe
+
+# Drop into playbooks-ephemeral-poc as .github/workflows/devlab-win-npu-probe.yml
+#
+# The Windows counterpart of devlab-npu-probe.yml, and it exists for the same
+# reason: npu-ready on X2-LA01-S05-D01 is a claim a person typed into config.py
+# after installing AMD's NPU package by hand, and a job on the box is the only
+# thing that can check it.
+#
+# It is also the first job ever written to reach that machine through a shared
+# label rather than by naming it. 'Windows' is in pool.GENERIC_LABELS, so the
+# pair [Windows, npu-ready] is what routes here -- if this lands anywhere else,
+# the label has been given to a host that should not have it.
+#
+# Read-only. Nothing here installs, downloads or writes outside the workspace.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    name: Strix Halo Windows - NPU userspace
+    runs-on: [self-hosted, Windows, npu-ready]
+    timeout-minutes: 15
+    steps:
+      - name: Who and where
+        shell: cmd
+        run: |
+          echo user:   %USERNAME%
+          echo host:   %COMPUTERNAME%
+          ver
+
+      - name: xrt-smi is on PATH and answers
+        shell: cmd
+        run: |
+          where xrt-smi || (echo ERROR: xrt-smi not on PATH & exit /b 1)
+          xrt-smi examine || (echo ERROR: xrt-smi examine failed & exit /b 1)
+
+      - name: The device is present, not just the tool
+        shell: cmd
+        run: |
+          rem xrt-smi exits 0 with an empty device table on a machine whose
+          rem driver did not bind, so the tool answering is not the same fact
+          rem as the NPU being there. Grep for it.
+          xrt-smi examine | findstr /i "NPU" || (echo ERROR: no NPU in the device list & exit /b 1)
+
+      - name: The DLLs FlexML links against
+        shell: cmd
+        run: |
+          rem xrt_coreutil is the one whose absence killed npu-amd-linux for a
+          rem week on the Linux side, under a message that named FlexML rather
+          rem than XRT. Check it by name here so that failure cannot repeat
+          rem quietly on Windows.
+          for %%d in (xrt_core.dll xrt_coreutil.dll) do (
+            if exist "C:\Program Files\AMD\xrt\bin\%%d" (echo OK   %%d) else (echo MISSING %%d & exit /b 1)
+          )
+
+      - name: Kernel driver version, for comparison with the userspace
+        shell: cmd
+        run: |
+          rem The staged userspace is pinned to the driver it was copied from.
+          rem These two drifting apart is the documented failure mode after a
+          rem driver update, so print both next to each other.
+          pnputil /enum-devices /class ComputeAccelerator /connected
+          xrt-smi examine | findstr /i "Version"
+
+      - name: Build toolchain
+        shell: cmd
+        run: |
+          cmake --version || echo cmake MISSING
+          git --version
