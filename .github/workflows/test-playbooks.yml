@@ -117,6 +117,20 @@ jobs:
           device_filter = parse_filter("DEVICE_FILTER")
           platform_filter = parse_filter("PLATFORM_FILTER")
 
+          # Devices the AMD DevLab ephemeral pool can also serve, mapped from
+          # the device name a playbook declares to the canonical label that
+          # pool publishes. Every hit produces a SECOND matrix entry running
+          # the same playbook on an ephemeral runner alongside the persistent
+          # one, so the two can be compared run for run. The ephemeral entry
+          # is never `required` -- a pool on trial must not gate a merge.
+          #
+          # To turn the trial off, empty this dict. To decommission the
+          # persistent runners, drop the device from tested_platforms in the
+          # playbook metadata and the ephemeral entry is what is left.
+          EPHEMERAL_POOL = {
+              "halo": "strix-halo",
+          }
+
           for pb_id in playbooks:
               for cat in ["core", "supplemental"]:
                   pb_file = Path(f"playbooks/{cat}/{pb_id}/playbook.json")
@@ -138,9 +152,22 @@ jobs:
                                   "playbook": pb_id,
                                   "platform": platform,
                                   "arch": device,
+                                  "pool": "persistent",
                                   "runner": json.dumps(["self-hosted", os_label, device]),
                                   "required": platform in required_platforms,
                               })
+                              canonical = EPHEMERAL_POOL.get(device.lower())
+                              if canonical:
+                                  matrix.append({
+                                      "playbook": pb_id,
+                                      "platform": platform,
+                                      "arch": device,
+                                      "pool": "ephemeral",
+                                      "runner": json.dumps(
+                                          ["self-hosted", os_label,
+                                           canonical, "ephemeral"]),
+                                      "required": False,
+                                  })
                       break
 
           print(json.dumps(matrix))
@@ -160,7 +187,7 @@ jobs:
           echo "Test matrix: ${{ steps.build-matrix.outputs.matrix }}"
 
   test-playbooks:
-    name: "Test ${{ matrix.playbook }} (${{ matrix.platform }}/${{ matrix.arch }})${{ matrix.required && ' ✦' || '' }}"
+    name: "Test ${{ matrix.playbook }} (${{ matrix.platform }}/${{ matrix.arch }}, ${{ matrix.pool }})${{ matrix.required && ' ✦' || '' }}"
     needs: detect-changes
     if: needs.detect-changes.outputs.has_entries == 'true'
     runs-on: ${{ fromJson(matrix.runner) }}
@@ -247,7 +274,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.playbook }}-${{ matrix.platform }}-${{ matrix.arch }}
+          name: test-results-${{ matrix.playbook }}-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.pool }}
           path: test-results/
           if-no-files-found: ignore
 
@@ -270,7 +297,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --playbook "${{ matrix.playbook }}" \
             --workflow-file "test-playbooks.yml" \
-            --runner-labels "self-hosted,Linux,${{ matrix.arch }}" \
+            --runner-labels "${{ join(fromJson(matrix.runner), ',') }}" \
             --runner-name "${{ runner.name }}" \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --sha "${{ github.sha }}"
@@ -286,7 +313,7 @@ jobs:
             --repo "${{ github.repository }}" `
             --playbook "${{ matrix.playbook }}" `
             --workflow-file "test-playbooks.yml" `
-            --runner-labels "self-hosted,Windows,${{ matrix.arch }}" `
+            --runner-labels "${{ join(fromJson(matrix.runner), ',') }}" `
             --runner-name "${{ runner.name }}" `
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" `
             --sha "${{ github.sha }}"
