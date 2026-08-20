@@ -24,7 +24,7 @@ on:
 jobs:
   probe:
     name: Strix Halo - egress, disk, gfx
-    runs-on: [self-hosted, Linux, halo]
+    runs-on: [self-hosted, Linux, strix-halo]
     timeout-minutes: 15
     steps:
       - name: Who and where

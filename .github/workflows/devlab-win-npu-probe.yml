@@ -20,7 +20,7 @@ on:
 jobs:
   probe:
     name: Strix Halo Windows - NPU userspace
-    runs-on: [self-hosted, Windows, npu-ready]
+    runs-on: [self-hosted, Windows, npu]
     timeout-minutes: 15
     steps:
       - name: Who and where
