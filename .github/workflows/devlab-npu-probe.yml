@@ -41,7 +41,7 @@ on:
 jobs:
   probe:
     name: Strix Halo - NPU, toolchain, egress
-    runs-on: [self-hosted, Linux, npu-ready]
+    runs-on: [self-hosted, Linux, npu]
     timeout-minutes: 15
     steps:
       - name: Who and where

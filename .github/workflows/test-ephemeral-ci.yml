@@ -9,24 +9,24 @@ on:
 
 jobs:
   test-linux-stx:
-    runs-on: [self-hosted, Linux, stx]
+    runs-on: [self-hosted, Linux, strix-point]
     steps:
       - run: echo "Hello from $(hostname) - $(uname -a)"
 
   test-windows-stx:
-    runs-on: [self-hosted, Windows, stx]
+    runs-on: [self-hosted, Windows, strix-point]
     steps:
       - run: Write-Output "Hello from $env:COMPUTERNAME - $(Get-CimInstance Win32_OperatingSystem | Select-Object -ExpandProperty Caption)"
 
   test-linux-r9700:
-    runs-on: [self-hosted, Linux, r9700]
+    runs-on: [self-hosted, Linux, radeon-r9700]
     steps:
       - run: echo "Hello from $(hostname) - $(uname -a)"
       - name: Show passed-through GPU
         run: lspci -nn | grep -iE 'vga|display' || echo "no display device found"
 
   test-windows-r9700:
-    runs-on: [self-hosted, Windows, r9700]
+    runs-on: [self-hosted, Windows, radeon-r9700]
     steps:
       - run: Write-Output "Hello from $env:COMPUTERNAME - $(Get-CimInstance Win32_OperatingSystem | Select-Object -ExpandProperty Caption)"
       - name: Show passed-through GPU
